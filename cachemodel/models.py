@@ -57,11 +57,11 @@ class CacheModel(models.Model):
         abstract = True
 
     def save(self, *args, **kwargs):
-        self.flush_cache()
         super(CacheModel, self).save(*args, **kwargs)
-    def delete(self, *args, **kwargs):
         self.flush_cache()
+    def delete(self, *args, **kwargs):
         super(CacheModel, self).delete(*args, **kwargs)
+        self.flush_cache()
     def flush_cache(self):
         """this method is called on save() and delete(), any cached fields should be expunged here."""
         #lookup the fields that have been cached by .get_by() and purge them

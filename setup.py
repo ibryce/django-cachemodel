@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='django-cachemodel',
-    version='0.9.0',
+    version='0.9.1',
     packages = find_packages(),
 
     author = 'Concentric Sky',
