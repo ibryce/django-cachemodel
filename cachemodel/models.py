@@ -17,6 +17,8 @@ from django.core.cache import cache
 from django.db import models
 from cachemodel import ns_cache
 import datetime
+from hashlib import md5
+from django.utils.encoding import force_unicode
 
 class CacheModelManager(models.Manager):
     """Manager for use with CacheModel"""
@@ -103,7 +105,8 @@ def cached_method(cache_timeout, cache_key):
     """
     def decorator(target):
         def wrapper(self, *args, **kwargs):
-            key = self.ns_cache_key(cache_key)
+            arg_suffix = md5(':'.join(force_unicode(v) for v in (list(args) + kwargs.items()))).hexdigest()
+            key = self.ns_cache_key(cache_key + arg_suffix)
             chunk = cache.get(key)
             if chunk is None:
                 chunk = target(self, *args, **kwargs)
