@@ -20,6 +20,7 @@ import datetime
 from hashlib import md5
 from django.utils.encoding import force_unicode
 from django.utils.functional import curry
+from functools import wraps
 
 class CacheModelManager(models.Manager):
     """Manager for use with CacheModel"""
@@ -68,6 +69,7 @@ class CacheModelManager(models.Manager):
 class CacheModel(models.Model):
     """An abstract model that has convienence functions for dealing with caching."""
     objects = CacheModelManager()
+    
     class Meta:
         abstract = True
 
@@ -79,11 +81,13 @@ class CacheModel(models.Model):
         self.flush_cache()
     def flush_cache(self):
         """this method is called on save() and delete(), any cached fields should be expunged here."""
-        #lookup the fields that have been cached by .get_by() and purge them
+        # lookup the fields that have been cached by .get_by() and purge them
         cached_field_names = cache.get( self.cache_key("__cached_field_names__") ) 
         if cached_field_names is not None:
             for field_name in cached_field_names:
-                cache.delete( self.cache_key("by_"+field_name, getattr(self, field_name)) )
+                cache.delete( self.cache_key("by_" + field_name, getattr(self, field_name)) )
+        
+        # Flush the object's cache namespace.
         self.ns_flush_cache()
     def ns_cache_key(self, *args):
         """Return a cache key inside the object's namespace.
@@ -97,33 +101,43 @@ class CacheModel(models.Model):
 
     @classmethod
     def cache_key(cls, *args):
-        """Generate a cache key from the object's class.__name__ and the arguments given"""
+        """
+        Generates a cache key from the object's class.__name__ and the arguments given
+        """
         key = cls.__name__
         for arg in args:
             key += '_'+str(arg)
         return key
 
 
-def cached_method(cache_timeout, cache_key):
+def cached_method(cache_timeout, cache_key=None):
     """A decorator for CacheModel methods.
 
      - Builds a key based on cache_key and the object's ns_cache_key() method.
      - Checks the cache for data at that key, if data exists it is returned and the method is never called.
-     - If the cache is stale or nonexistent, run the method and cache the result at the key specifieid.
+     - If the cache is stale or nonexistent, run the method and cache the result at the key specified.
 
     Arguments:
       cache_timeout -- the number of seconds to keep the cached data
-      cache_key -- a key for the cached method, it will be inside the object's namespace via CacheModel.ns_cache_key()
+      cache_key -- a key for the cached method, it will be inside the object's namespace via CacheModel.ns_cache_key().
+                   if not specified, uses the target method's name.
 
     """
-    def decorator(target):
+    def decorator(cache_key, target):
+        if cache_key == None:
+            cache_key = target.__name__
+        
+        @wraps(target)
         def wrapper(self, *args, **kwargs):
             arg_suffix = md5(':'.join(force_unicode(v) for v in (list(args) + kwargs.items()))).hexdigest()
-            key = self.ns_cache_key(cache_key + arg_suffix)
+            
+            key = self.ns_cache_key(wrapper.cache_key + arg_suffix)
             chunk = cache.get(key)
             if chunk is None:
                 chunk = target(self, *args, **kwargs)
                 cache.set(key, chunk, cache_timeout)
             return chunk
+        wrapper.cache_key = cache_key
         return wrapper
-    return decorator
+    
+    return curry(decorator, cache_key)
