@@ -19,6 +19,7 @@ from cachemodel import ns_cache
 import datetime
 from hashlib import md5
 from django.utils.encoding import force_unicode
+from django.utils.functional import curry
 
 class CacheModelManager(models.Manager):
     """Manager for use with CacheModel"""
@@ -49,10 +50,20 @@ class CacheModelManager(models.Manager):
             cache.set(key, obj, cache_timeout)
         return obj
 
-    def get_by_pk(self, pk, cache_timeout=None):
-        """Convienence function that calls get_by("pk", value)"""
-        return self.get_by("pk",pk)
-
+    def __getattr__(self, name):
+        """
+        Allows for calling objects.get_by_pk(...) instead of objects..get_by('pk', ...),
+        where ``pk`` is any field.
+        """
+        if name.startswith('get_by_'):
+            # The first time this is called for a field,
+            # the resulting curried method is actually
+            # added to this instance of the manager.
+            new_func = curry(self.get_by, name[7:])
+            setattr(self, name, new_func)
+            return new_func
+        
+        raise AttributeError
 
 class CacheModel(models.Model):
     """An abstract model that has convienence functions for dealing with caching."""
