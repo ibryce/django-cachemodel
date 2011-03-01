@@ -35,12 +35,14 @@ class CacheModelManager(models.Manager):
             cache_timeout = getattr(settings, 'CACHE_TIMEOUT', 900)
 
         # cache the field name that was used so flush_cache can purge them automatically
-        cached_field_names = cache.get( self.model.cache_key("__cached_field_names__") )
+        key = self.model.cache_key("__cached_field_names__")
+        cached_field_names = cache.get(key)
         if cached_field_names is None:
             cached_field_names = set()
         cached_field_names.add(field_name)
-        cache.set(self.model.cache_key("__cached_field_names__"), cached_field_names, cache_timeout)
-        key = self.model.cache_key("by_"+field_name, field_value)
+        cache.set(key, cached_field_names, cache_timeout)
+        
+        key = self.model.cache_key("by_" + field_name, field_value)
         obj = cache.get(key)
         if obj is None:
             obj = self.get(**{field_name: field_value})
