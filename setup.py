@@ -1,9 +1,9 @@
-
 from setuptools import setup, find_packages
+import cachemodel
 
 setup(
     name='django-cachemodel',
-    version='0.9.3',
+    version=".".join(map(str, cachemodel.VERSION)),
     packages = find_packages(),
 
     author = 'Concentric Sky',

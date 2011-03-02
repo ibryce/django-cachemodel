@@ -43,7 +43,7 @@ class CacheModelManager(models.Manager):
             cached_field_names = set()
         cached_field_names.add(field_name)
         cache.set(key, cached_field_names, cache_timeout)
-        
+
         key = self.model.cache_key("by_" + field_name, field_value)
         obj = cache.get(key)
         if obj is None:
@@ -63,22 +63,31 @@ class CacheModelManager(models.Manager):
             new_func = curry(self.get_by, name[7:])
             setattr(self, name, new_func)
             return new_func
-        
+
         raise AttributeError
+
+
 
 class CacheModel(models.Model):
     """An abstract model that has convienence functions for dealing with caching."""
     objects = CacheModelManager()
-    
+
     class Meta:
         abstract = True
 
     def save(self, *args, **kwargs):
+        #find all the denormalized methods and save them into their respective fields
+        if not hasattr(self, '_denormalized_methods'):
+            self._denormalized_methods = _find_denormalized_fields(self)
+        for method in self._denormalized_methods:
+            setattr(self, method._field_name, method(self))
         super(CacheModel, self).save(*args, **kwargs)
         self.flush_cache()
+
     def delete(self, *args, **kwargs):
         super(CacheModel, self).delete(*args, **kwargs)
         self.flush_cache()
+
     def flush_cache(self):
         """this method is called on save() and delete(), any cached fields should be expunged here."""
         # lookup the fields that have been cached by .get_by() and purge them
@@ -86,15 +95,17 @@ class CacheModel(models.Model):
         if cached_field_names is not None:
             for field_name in cached_field_names:
                 cache.delete( self.cache_key("by_" + field_name, getattr(self, field_name)) )
-        
+
         # Flush the object's cache namespace.
         self.ns_flush_cache()
+
     def ns_cache_key(self, *args):
         """Return a cache key inside the object's namespace.
 
         The namespace is built from: The Objects class.__name__ and the Object's PK.
         """
         return ns_cache.ns_key(self.cache_key(self.pk), args)
+
     def ns_flush_cache(self):   
         """Flush all cache keys inside the object's namespace"""
         ns_cache.ns_flush(self.cache_key(self.pk))
@@ -126,11 +137,11 @@ def cached_method(cache_timeout, cache_key=None):
     def decorator(cache_key, target):
         if cache_key == None:
             cache_key = target.__name__
-        
+
         @wraps(target)
         def wrapper(self, *args, **kwargs):
             arg_suffix = md5(':'.join(force_unicode(v) for v in (list(args) + kwargs.items()))).hexdigest()
-            
+
             key = self.ns_cache_key(wrapper.cache_key + arg_suffix)
             chunk = cache.get(key)
             if chunk is None:
@@ -139,5 +150,31 @@ def cached_method(cache_timeout, cache_key=None):
             return chunk
         wrapper.cache_key = cache_key
         return wrapper
-    
+
     return curry(decorator, cache_key)
+
+
+def denormalized_field(field_name):
+    """A decorator for CacheModel methods.
+
+    - pass the field name to denormalized into into the decorator
+    - the return of the function will be stored in the database field on each save
+
+    Arguments:
+      field_name -- the name of a field on the model that will store the results of the function
+    """
+    def decorator(target):
+        @wraps(target)
+        def wrapper(self):
+            return target(self)
+        wrapper._denormalized_field = True
+        wrapper._field_name = field_name
+        return wrapper
+    return decorator
+
+def _find_denormalized_fields(instance):
+    """helper function that finds all methods decorated with @denormalized_field"""
+    non_field_attributes = set(dir(instance.__class__)) - set(instance._meta.get_all_field_names())
+    for m in non_field_attributes:
+        if hasattr(getattr(instance.__class__, m), '_denormalized_field'):
+            yield getattr(instance.__class__, m)
