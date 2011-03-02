@@ -77,9 +77,7 @@ class CacheModel(models.Model):
 
     def save(self, *args, **kwargs):
         #find all the denormalized methods and save them into their respective fields
-        if not hasattr(self, '_denormalized_methods'):
-            self._denormalized_methods = _find_denormalized_fields(self)
-        for method in self._denormalized_methods:
+        for method in _find_denormalized_fields(self):
             setattr(self, method._field_name, method(self))
         super(CacheModel, self).save(*args, **kwargs)
         self.flush_cache()
