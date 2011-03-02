@@ -94,7 +94,11 @@ class CacheModel(models.Model):
         cached_field_names = cache.get( self.cache_key("__cached_field_names__") ) 
         if cached_field_names is not None:
             for field_name in cached_field_names:
-                cache.delete( self.cache_key("by_" + field_name, getattr(self, field_name)) )
+                try:
+                    cache.delete( self.cache_key("by_" + field_name, getattr(self, field_name)) )
+                except:
+                    # try to delete the cache if possible, otherwise...
+                    pass
 
         # Flush the object's cache namespace.
         self.ns_flush_cache()
