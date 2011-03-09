@@ -15,7 +15,7 @@
 from django.conf import settings
 from django.core.cache import cache
 from django.db import models
-from cachemodel import ns_cache
+from cachemodel import ns_cache, CACHE_TIMEOUT
 import datetime
 from hashlib import md5
 from django.utils.encoding import force_unicode
@@ -123,19 +123,39 @@ class CacheModel(models.Model):
         return key
 
 
-def cached_method(cache_timeout, cache_key=None):
+def cached_method(cache_timeout=None, cache_key=None):
     """A decorator for CacheModel methods.
 
      - Builds a key based on cache_key and the object's ns_cache_key() method.
      - Checks the cache for data at that key, if data exists it is returned and the method is never called.
      - If the cache is stale or nonexistent, run the method and cache the result at the key specified.
 
+    May be called with or without arguments, i.e.
+        @cached_method
+        def some_method(self, ...)
+    
+    or 
+        @cached_method(cache_key='something_else')
+        def some_method(self, ...)
+    
     Arguments:
-      cache_timeout -- the number of seconds to keep the cached data
+      cache_timeout -- the number of seconds to keep the cached data.
+          A project-wide default may be set once using the cachemodel.set_cache_timeout
+          method. If this default is set, cache_timeout is optional.
       cache_key -- a key for the cached method, it will be inside the object's namespace via CacheModel.ns_cache_key().
-                   if not specified, uses the target method's name.
-
+          If not specified, uses the target method's name.
+    
     """
+    func = None
+    if callable(cache_timeout):
+        func = cache_timeout
+        cache_timeout = CACHE_TIMEOUT
+    elif cache_timeout is None:
+        cache_timeout = CACHE_TIMEOUT
+    
+    if cache_timeout is None:
+        raise ValueError("Cache timeout must be specified.")
+    
     def decorator(cache_key, target):
         if cache_key == None:
             cache_key = target.__name__
@@ -152,8 +172,9 @@ def cached_method(cache_timeout, cache_key=None):
             return chunk
         wrapper.cache_key = cache_key
         return wrapper
-
-    return curry(decorator, cache_key)
+    
+    return decorator(cache_key, func) if func is not None \
+        else curry(decorator, cache_key)
 
 
 def denormalized_field(field_name):
