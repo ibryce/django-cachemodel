@@ -18,7 +18,7 @@ from django.db import models
 from cachemodel import ns_cache, CACHE_TIMEOUT
 import datetime
 from hashlib import md5
-from django.utils.encoding import force_unicode
+from django.utils.encoding import force_unicode, smart_str
 from django.utils.functional import curry
 from functools import wraps
 
@@ -48,7 +48,7 @@ class CacheModelManager(models.Manager):
         obj = cache.get(key)
         if obj is None:
             obj = self.get(**{field_name: field_value})
-            cache.set(key, obj, cache_timeout)
+            cache.set(_cache_key_str(key), obj, cache_timeout)
         return obj
 
     def __getattr__(self, name):
@@ -117,10 +117,8 @@ class CacheModel(models.Model):
         """
         Generates a cache key from the object's class.__name__ and the arguments given
         """
-        key = cls.__name__
-        for arg in args:
-            key += '_'+str(arg)
-        return key
+        vals = [cls.__name__] + [_cache_key_str(arg) for arg in args]
+        return '_'.join(vals)
 
 
 def cached_method(cache_timeout=None, cache_key=None):
@@ -162,13 +160,19 @@ def cached_method(cache_timeout=None, cache_key=None):
 
         @wraps(target)
         def wrapper(self, *args, **kwargs):
+            cached = kwargs.pop('cached', True)
+            chunk = None
+            
             arg_suffix = md5(':'.join(force_unicode(v) for v in (list(args) + kwargs.items()))).hexdigest()
-
             key = self.ns_cache_key(wrapper.cache_key + arg_suffix)
-            chunk = cache.get(key)
+
+            if cached:
+                chunk = cache.get(key)
+            
             if chunk is None:
                 chunk = target(self, *args, **kwargs)
                 cache.set(key, chunk, cache_timeout)
+            
             return chunk
         wrapper.cache_key = cache_key
         return wrapper
@@ -201,3 +205,9 @@ def _find_denormalized_fields(instance):
     for m in non_field_attributes:
         if hasattr(getattr(instance.__class__, m), '_denormalized_field'):
             yield getattr(instance.__class__, m)
+
+def _cache_key_str(value):
+    """
+    Encode a value into a memcached key-compatible string.
+    """
+    return smart_str(value, encoding='ascii', errors='xmlcharrefreplace')
