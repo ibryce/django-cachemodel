@@ -13,7 +13,7 @@
 #  limitations under the License.
 VERSION = (0,9,8)
 
-CACHE_TIMEOUT = None
+CACHE_TIMEOUT = 31536000
 
 def set_cache_timeout(value):
     """

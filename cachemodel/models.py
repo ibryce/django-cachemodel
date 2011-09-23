@@ -120,6 +120,19 @@ class CacheModel(models.Model):
         vals = [cls.__name__] + [_cache_key_str(arg) for arg in args]
         return '_'.join(vals)
 
+    def __getattr__(self, name):
+        if name.startswith('cached_'):
+            field_name = name[7:]
+            field = self._meta.get_field(field_name)
+            if isinstance(field, models.ForeignKey):
+                related_model = field.related.parent_model
+                related_id = getattr(self, '%s_id' % field_name)
+                if hasattr(related_model.objects, 'get_by_pk'):
+                    return related_model.objects.get_by_pk(related_id)
+                else:
+                    return getattr(self, field_name)
+        raise AttributeError
+
 
 def cached_method(cache_timeout=None, cache_key=None):
     """A decorator for CacheModel methods.
