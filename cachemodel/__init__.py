@@ -11,6 +11,8 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+from django.utils.encoding import smart_str
+
 VERSION = (0,9,8)
 
 CACHE_TIMEOUT = 31536000
@@ -30,3 +32,10 @@ def set_cache_timeout(value):
                          "Cannot set to %d" % (CACHE_TIMEOUT, value))
     
     CACHE_TIMEOUT = value
+
+
+def key_function_memcache_compat(value):
+    """
+    Encode a value into a memcached key-compatible string.
+    """
+    return smart_str(value, encoding='ascii', errors='xmlcharrefreplace')
