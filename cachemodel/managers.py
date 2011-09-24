@@ -17,6 +17,7 @@ from django.core.cache import cache
 from django.db import models
 from django.utils.functional import curry
 from cachemodel import key_function_memcache_compat
+from cachemodel import ns_cache
 
 class CacheModelManager(models.Manager):
     """Manager for use with CacheModel"""
@@ -46,6 +47,10 @@ class CacheModelManager(models.Manager):
             obj = self.get(**{field_name: field_value})
             cache.set(key_function_memcache_compat(key), obj, cache_timeout)
         return obj
+
+    def ns_cache_key(self, *args):
+        """Return a cache key inside the model class's namespace."""
+        return ns_cache.ns_key(self.model.cache_key(), args)
 
     def __getattr__(self, name):
         """

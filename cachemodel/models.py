@@ -15,8 +15,8 @@
 from django.core.cache import cache
 from django.db import models
 from cachemodel import ns_cache
-from cachemodel.managers import CacheModelManager
 from cachemodel import key_function_memcache_compat
+from cachemodel.managers import CacheModelManager
 
 from cachemodel.decorators import *   # backwards compatability
 
@@ -85,12 +85,11 @@ class CacheModel(models.Model):
                     return getattr(self, field_name)
         raise AttributeError
 
-
-
 def _find_denormalized_fields(instance):
     """helper function that finds all methods decorated with @denormalized_field"""
     non_field_attributes = set(dir(instance.__class__)) - set(instance._meta.get_all_field_names())
     for m in non_field_attributes:
         if hasattr(getattr(instance.__class__, m), '_denormalized_field'):
             yield getattr(instance.__class__, m)
+
 
