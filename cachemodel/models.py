@@ -28,7 +28,7 @@ class CacheModel(models.Model):
         abstract = True
 
     def save(self, *args, **kwargs):
-        #find all the methods decorated with denormalized_field and save them into their respective fields
+        #find all the methods decorated with denormalized_field and update their respective fields
         for method in _find_denormalized_fields(self):
             setattr(self, method._denormalized_field_name, method(self))
         super(CacheModel, self).save(*args, **kwargs)
@@ -69,12 +69,11 @@ class CacheModel(models.Model):
         """
         Generates a cache key from the object's class.__name__ and the arguments given
         """
-        vals = [cls.__name__] + [key_function_memcache_compat(arg) for arg in args]
-        return '_'.join(vals)
+        return ':'.join([cls.__name__] + [key_function_memcache_compat(arg) for arg in args])
 
     def __getattr__(self, name):
-        if name.startswith('cached_'):
-            field_name = name[7:]
+        if name.endswith('_cached'):
+            field_name = name[:-7]
             field = self._meta.get_field(field_name)
             if isinstance(field, models.ForeignKey):
                 related_model = field.related.parent_model
@@ -83,7 +82,7 @@ class CacheModel(models.Model):
                     return related_model.objects.get_by_pk(related_id)
                 else:
                     return getattr(self, field_name)
-        raise AttributeError
+        raise AttributeError("'%s' object has no attribute '%s'" % (self._meta.object_name, name,))
 
 def _find_denormalized_fields(instance):
     """helper function that finds all methods decorated with @denormalized_field"""
@@ -91,5 +90,4 @@ def _find_denormalized_fields(instance):
     for m in non_field_attributes:
         if hasattr(getattr(instance.__class__, m), '_denormalized_field'):
             yield getattr(instance.__class__, m)
-
 
