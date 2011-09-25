@@ -12,26 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 from django.utils.encoding import smart_str
+from django.conf import settings
 
 VERSION = (0,9,8)
 
-CACHE_TIMEOUT = 31536000
-
-def set_cache_timeout(value):
-    """
-    Sets a project-wide default for @cached_method's cache_timeout argument.
-    
-    Once set, this default cannot be changed. This is to ensure that
-    the developer is aware when distinct defaults are suggested, i.e.
-    by different apps.
-    """
-    global CACHE_TIMEOUT
-    
-    if CACHE_TIMEOUT is not None and CACHE_TIMEOUT != value:
-        raise ValueError("Cache timeout already set to %d. "
-                         "Cannot set to %d" % (CACHE_TIMEOUT, value))
-    
-    CACHE_TIMEOUT = value
+CACHE_FOREVER_TIMEOUT = getattr(settings, 'CACHE_FOREVER_TIMEOUT', 60*60*24*365) # one year
 
 
 def key_function_memcache_compat(value):
