@@ -71,6 +71,9 @@ class CacheModel(models.Model):
         """
         return ':'.join([cls.__name__] + [key_function_memcache_compat(arg) for arg in args])
 
+    def warm_cache(self):
+        pass
+
     def __getattr__(self, name):
         if name.endswith('_cached'):
             field_name = name[:-7]

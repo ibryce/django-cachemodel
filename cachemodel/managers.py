@@ -51,3 +51,6 @@ class CacheModelManager(models.Manager):
     def ns_cache_key(self, *args):
         """Return a cache key inside the model class's namespace."""
         return ns_cache.ns_key(self.model.cache_key(), args)
+
+    def warm_cache(self):
+        pass
