@@ -16,7 +16,7 @@ from django.core.cache import cache
 from django.db import models
 from cachemodel import ns_cache
 from cachemodel import key_function_memcache_compat
-from cachemodel.managers import CacheModelManager
+from cachemodel.managers import CacheModelManager, CachedTableManager
 
 from cachemodel.decorators import *   # backwards compatability
 
@@ -94,3 +94,13 @@ def _find_denormalized_fields(instance):
         if hasattr(getattr(instance.__class__, m), '_denormalized_field'):
             yield getattr(instance.__class__, m)
 
+
+class CachedTable(CacheModel):
+    """A convience class that loads the entire table into the cache ONLY USE FOR SMALL TABLES.
+
+    Intended for use for things like Category tables, that will be < 50 entries and used heavily.
+    """
+    objects = CachedTableManager()
+
+    class Meta:
+        abstract = True
