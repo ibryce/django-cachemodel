@@ -12,57 +12,42 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from django.conf import settings
+from cachemodel import CACHE_FOREVER_TIMEOUT
 from django.core.cache import cache
 from django.db import models
-from django.utils.functional import curry
-from cachemodel import key_function_memcache_compat
 from cachemodel import ns_cache
 
 class CacheModelManager(models.Manager):
     """Manager for use with CacheModel"""
-    def get_by(self, field_name, field_value, cache_timeout=None):
-        """A convienence function for looking up an object by a particular field
+    use_for_related_fields = True
 
-        If the object is in the cache, returned the cached version.
-        If the object is not in the cache, do a basic .get() call and store it in the cache.
 
-        Fields used for lookup will be stored in the special cache, '__cached_field_names__'
-        so they can be automatically purged on the object's flush_cache() method
-        """
-        if cache_timeout is None:
-            cache_timeout = getattr(settings, 'CACHE_TIMEOUT', 900)
+    def _generate_function_signature(self, *args, **kwargs):
+        """generate a unique signature based on arguments"""
+        signature = ",".join(args)+":"+ ":".join("%s=%s" % (field, value) for field,value in kwargs.items())
 
-        # cache the field name that was used so flush_cache can purge them automatically
-        key = self.model.cache_key("__cached_field_names__")
-        cached_field_names = cache.get(key)
-        if cached_field_names is None:
-            cached_field_names = set()
-        cached_field_names.add(field_name)
-        cache.set(key, cached_field_names, cache_timeout)
+        # cache the signature so flush_cache can flush them all automatically
+        signatures_key = self.model.cache_key("__cached_signatures__")
+        cached_signatures = cache.get(signatures_key)
+        if cached_signatures is None:
+            cached_signatures = set()
+        cached_signatures.add(signature)
+        cache.set(signatures_key, cached_signatures, CACHE_FOREVER_TIMEOUT)
 
-        key = self.model.cache_key("by_" + field_name, field_value)
-        obj = cache.get(key)
+        return signature
+
+    def get_cached(self, *args, **kwargs):
+        """Wrapper around get() that caches the result for future calls"""
+        signature = self._generate_function_signature(*args, **kwargs)
+
+        cache_key = self.model.cache_key("get_cached", signature)
+        obj = cache.get(cache_key)
         if obj is None:
-            obj = self.get(**{field_name: field_value})
-            cache.set(key_function_memcache_compat(key), obj, cache_timeout)
+            obj = super(CacheModelManager, self).get(*args, **kwargs)
+            cache.set(cache_key, obj, CACHE_FOREVER_TIMEOUT)
         return obj
+
 
     def ns_cache_key(self, *args):
         """Return a cache key inside the model class's namespace."""
         return ns_cache.ns_key(self.model.cache_key(), args)
-
-    def __getattr__(self, name):
-        """
-        Allows for calling objects.get_by_pk(...) instead of objects..get_by('pk', ...),
-        where ``pk`` is any field.
-        """
-        if name.startswith('get_by_'):
-            # The first time this is called for a field,
-            # the resulting curried method is actually
-            # added to this instance of the manager.
-            new_func = curry(self.get_by, name[7:])
-            setattr(self, name, new_func)
-            return new_func
-
-        raise AttributeError

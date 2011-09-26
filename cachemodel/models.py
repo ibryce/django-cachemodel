@@ -78,8 +78,8 @@ class CacheModel(models.Model):
             if isinstance(field, models.ForeignKey):
                 related_model = field.related.parent_model
                 related_id = getattr(self, '%s_id' % field_name)
-                if hasattr(related_model.objects, 'get_by_pk'):
-                    return related_model.objects.get_by_pk(related_id)
+                if issubclass(related_model.objects.__class__, CacheModelManager):
+                    return related_model.objects.get_cached(pk=related_id)
                 else:
                     return getattr(self, field_name)
         raise AttributeError("'%s' object has no attribute '%s'" % (self._meta.object_name, name,))
