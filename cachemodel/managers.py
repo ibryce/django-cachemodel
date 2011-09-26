@@ -94,4 +94,4 @@ class CachedTableManager(CacheModelManager):
 
     def warm_cache(self):
         # make sure entire table is indexed in cache
-        self.all())
+        self.all()
