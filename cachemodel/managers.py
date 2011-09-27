@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from cachemodel import CACHE_FOREVER_TIMEOUT
+from cachemodel import CACHE_FOREVER_TIMEOUT, CACHEMODEL_DIRTY_SUFFIX, CACHEMODEL_CELERY_SUPPORT, generate_function_signature_key
 from django.core.cache import cache
 from django.db import models
 from cachemodel import ns_cache
@@ -22,32 +22,37 @@ class CacheModelManager(models.Manager):
     """Manager for use with CacheModel"""
     use_for_related_fields = True
 
-
-    def _generate_function_signature(self, *args, **kwargs):
-        """generate a unique signature based on arguments"""
-        signature = ",".join(args)+":"+ ":".join("%s=%s" % (field, value) for field,value in kwargs.items())
-
-        # cache the signature so flush_cache can flush them all automatically
-        signatures_key = self.model.cache_key("__cached_signatures__")
-        cached_signatures = cache.get(signatures_key)
-        if cached_signatures is None:
-            cached_signatures = set()
-        cached_signatures.add(signature)
-        cache.set(signatures_key, cached_signatures, CACHE_FOREVER_TIMEOUT)
-
-        return signature
-
     def get_cached(self, *args, **kwargs):
         """Wrapper around get() that caches the result for future calls"""
-        signature = self._generate_function_signature(*args, **kwargs)
+        cache_key = generate_function_signature_key('get_cached', self.cache_key, *args, **kwargs)
+        is_dirty = cache.get(cache_key+CACHEMODEL_DIRTY_SUFFIX)
 
-        cache_key = self.model.cache_key("get_cached", signature)
-        obj = cache.get(cache_key)
+        obj = None
+
+        if not is_dirty:
+            obj = cache.get(cache_key)
+
+        if is_dirty and CACHEMODEL_CELERY_SUPPORT: # we are dirty, but display the cached one while we update via celery
+            obj = cache.get(cache_key)
+            from cachemodel.tasks import UpdateGetCached
+            UpdateGetCached.delay(cache_update= {
+                'model': self.model,
+                'function': 'get',
+                'key': cache_key,
+                'args': args,
+                'kwargs': kwargs,
+            })
+
+        #NOTE: if is_dirty and not CACHEMODEL_CELERY_SUPPORT:  obj == None and then you thundering herd
+
         if obj is None:
             obj = super(CacheModelManager, self).get(*args, **kwargs)
             cache.set(cache_key, obj, CACHE_FOREVER_TIMEOUT)
+            cache.delete(cache_key+CACHEMODEL_DIRTY_SUFFIX) # no longer dirty
         return obj
 
+    def cache_key(self, *args):
+        return self.model.cache_key(*args)
 
     def ns_cache_key(self, *args):
         """Return a cache key inside the model class's namespace."""
@@ -74,11 +79,9 @@ class CachedTableManager(CacheModelManager):
         if not hasattr(self, '_cached_index'):
             self._build_indexes()
 
-        signature = self._generate_function_signature(*args, **kwargs)
+        cache_key = generate_function_signature_key('get_cached', self.cache_key, *args, **kwargs)
 
-        cache_key = self.model.cache_key("get_cached", signature)
         obj = cache.get(cache_key)
-
         if obj is None:
             if 'pk' in kwargs:
                 obj = self._cached_index['pk'].get(kwargs['pk'], None)

@@ -13,7 +13,7 @@
 #  limitations under the License.
 
 from functools import wraps
-from cachemodel import CACHE_FOREVER_TIMEOUT
+from cachemodel import CACHE_FOREVER_TIMEOUT, CACHEMODEL_DIRTY_SUFFIX, CACHEMODEL_CELERY_SUPPORT, generate_function_signature_key, CACHEMODEL_FORCE_UPDATE_COOKIE
 from django.utils.functional import curry
 from django.utils.encoding import force_unicode
 from hashlib import md5
@@ -48,17 +48,36 @@ def cached_method(*args, **kwargs):
 
         @wraps(target)
         def wrapper(self, *args, **kwargs):
-            # generate a md5 hash of all the args/kwargs
-            arg_suffix = md5(':'.join(force_unicode(v) for v in (list(args) + kwargs.items()))).hexdigest()
-            # generate a namespaced cache key
-            key = self.ns_cache_key(cache_key, arg_suffix)
+            cache_key = wrapper._cache_key
+            key = generate_function_signature_key("cached_method", self.cache_key, *([cache_key] + list(args)), **kwargs)
+            is_dirty = cache.get(key+CACHEMODEL_DIRTY_SUFFIX)
+            force_update = (is_dirty == CACHEMODEL_FORCE_UPDATE_COOKIE)
 
-            chunk = cache.get(key)
-            if chunk is None:
+            chunk = None
+
+            if not force_update and not is_dirty:
+                chunk = cache.get(key)
+
+            if not force_update and is_dirty and CACHEMODEL_CELERY_SUPPORT: # we are dirty, but display the cached one while we update via celery
+                chunk = cache.get(key)
+                from cachemodel.tasks import UpdateGetCached
+                UpdateGetCached.delay(cache_update={
+                    'is_manager': hasattr(self, 'model'),
+                    'model': self.model if hasattr(self, 'model') else self,
+                    'function': target.__name__,
+                    'key': key,
+                    'args': args,
+                    'kwargs': kwargs,
+                })
+
+
+            if force_update or chunk is None:
                 chunk = target(self, *args, **kwargs)
                 cache.set(key, chunk, CACHE_FOREVER_TIMEOUT)
+                cache.delete(key+CACHEMODEL_DIRTY_SUFFIX)
             return chunk
         wrapper._cached_method = True
+        wrapper._cache_key = cache_key
         return wrapper
 
     # if decorator was used without (), we are passed target directly so call with cache_key=None

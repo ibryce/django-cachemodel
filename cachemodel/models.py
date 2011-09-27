@@ -15,8 +15,9 @@
 from django.core.cache import cache
 from django.db import models
 from cachemodel import ns_cache
-from cachemodel import key_function_memcache_compat
+from cachemodel import mark_all_signatures_as_dirty, key_function_memcache_compat, CACHE_FOREVER_TIMEOUT, CACHEMODEL_DIRTY_SUFFIX
 from cachemodel.managers import CacheModelManager, CachedTableManager
+
 
 from cachemodel.decorators import *   # backwards compatability
 
@@ -39,19 +40,16 @@ class CacheModel(models.Model):
         self.flush_cache()
 
     def flush_cache(self):
-        """this method is called on save() and delete(), any cached fields should be expunged here."""
-        # lookup the fields that have been cached by .get_by() and purge them
-        cached_field_names = cache.get( self.cache_key("__cached_field_names__") ) 
-        if cached_field_names is not None:
-            for field_name in cached_field_names:
-                try:
-                    cache.delete( self.cache_key("by_" + field_name, getattr(self, field_name)) )
-                except:
-                    # try to delete the cache if possible, otherwise...
-                    pass
+        """this method is called whenever we should invalidate our cache.
 
-        # Flush the object's cache namespace.
-        self.ns_flush_cache()
+        Instead of deleting from the cache, mark it as dirty instead, to avoid thundering herd problems
+        """
+        mark_all_signatures_as_dirty("get_cached", self.cache_key)
+        mark_all_signatures_as_dirty("cached_method", self.cache_key)
+
+        # Flush the object's namespace cache.
+        #self.ns_flush_cache()
+
 
     def ns_cache_key(self, *args):
         """Return a cache key inside the object's namespace.
@@ -61,8 +59,11 @@ class CacheModel(models.Model):
         return ns_cache.ns_key(self.cache_key(self.pk), args)
 
     def ns_flush_cache(self):   
-        """Flush all cache keys inside the object's namespace"""
-        ns_cache.ns_flush(self.cache_key(self.pk))
+        #"""Flush all cache keys inside the object's namespace"""
+        #ns_cache.ns_flush(self.cache_key(self.pk))
+        """Mark all keys in the namespace as dirty"""
+        cache_key = self.cache_key("__namespace__is_dirty__")
+        cache.set(cache_key, True, CACHE_FOREVER_TIMEOUT)
 
     @classmethod
     def cache_key(cls, *args):
