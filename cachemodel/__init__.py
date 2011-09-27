@@ -14,6 +14,7 @@
 from django.utils.encoding import smart_str
 from django.conf import settings
 from django.core.cache import cache
+from hashlib import md5
 
 VERSION = (0,9,8)
 
@@ -38,8 +39,8 @@ def generate_function_signature_key(prefix, cache_key_func, *args, **kwargs):
     """generate a unique signature based on arguments given, then save a copy in the cache to iterate over later"""
 
     parts = []
-    parts.append(",".join(key_function_memcache_compat(a) for a in args))
-    parts.append('&'.join("%s=%s" % (field, value) for field,value in kwargs.items()))
+    parts.append(md5(",".join(key_function_memcache_compat(a) for a in args)).hexdigest())
+    parts.append(md5(','.join("%s=%s" % (field, value) for field,value in kwargs.items())).hexdigest())
     signature = ':'.join(parts)
     cache_key = cache_key_func(prefix, signature)
 
@@ -51,7 +52,7 @@ def generate_function_signature_key(prefix, cache_key_func, *args, **kwargs):
     cached_signatures.add(cache_key)
     cache.set(signatures_key, cached_signatures, CACHE_FOREVER_TIMEOUT)
 
-    return cache_key
+    return key_function_memcache_compat(cache_key)
 
 def mark_all_signatures_as_dirty(prefix, cache_key_func):
     signatures_key = cache_key_func("__cached_signatures_%s__" % (prefix,))

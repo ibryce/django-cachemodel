@@ -49,7 +49,14 @@ def cached_method(*args, **kwargs):
         @wraps(target)
         def wrapper(self, *args, **kwargs):
             cache_key = wrapper._cache_key
-            key = generate_function_signature_key("cached_method", self.cache_key, *([cache_key] + list(args)), **kwargs)
+
+            prefix = "cached_method"
+            parts = [cache_key]
+            if hasattr(self, 'pk'):
+                parts.append(str(self.pk))
+            parts.extend(args)
+
+            key = generate_function_signature_key(prefix, self.cache_key, *parts, **kwargs)
             is_dirty = cache.get(key+CACHEMODEL_DIRTY_SUFFIX)
             force_update = (is_dirty == CACHEMODEL_FORCE_UPDATE_COOKIE)
 
